@@ -29,11 +29,12 @@ require('./jobs/autoConfirm');
 app.get('/api/test-email', async (req, res) => {
   const nodemailer = require('nodemailer');
   const t = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
+    host: '74.125.133.108',  // smtp.gmail.com IPv4 direct
     port: 465,
     secure: true,
     auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    connectionTimeout: 8000,
+    tls: { rejectUnauthorized: false, servername: 'smtp.gmail.com' },
+    connectionTimeout: 10000,
   });
   try {
     await t.sendMail({

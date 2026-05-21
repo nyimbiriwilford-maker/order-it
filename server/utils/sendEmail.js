@@ -3,7 +3,7 @@ const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
+  host: '74.125.133.108',  // smtp.gmail.com IPv4 — bypasses IPv6 resolution entirely
   port: 465,
   secure: true,
   auth: {
@@ -12,11 +12,11 @@ const transporter = nodemailer.createTransport({
   },
   tls: {
     rejectUnauthorized: false,
+    servername: 'smtp.gmail.com',  // required when using IP directly
   },
-  family: 4,
-  connectionTimeout: 8000,  // fail after 8 seconds, not 60+
-  greetingTimeout:   8000,
-  socketTimeout:     8000,
+  connectionTimeout: 10000,
+  greetingTimeout:   10000,
+  socketTimeout:     10000,
 });
 
 const sendEmail = async ({ to, subject, html }) => {
@@ -28,7 +28,6 @@ const sendEmail = async ({ to, subject, html }) => {
     console.log('✅ Email sent to', to);
   } catch (err) {
     console.error('❌ Email error:', err.message);
-    // Swallow the error — never let email failures bubble up
   }
 };
 
