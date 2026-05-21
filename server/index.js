@@ -25,23 +25,6 @@ app.use('/api/payouts',             require('./routes/payouts'));
 app.use('/api/visual-search',       require('./routes/visualSearch'));
 require('./jobs/autoConfirm');
 
-// ── Temporary email test route — remove after confirming emails work ──────────
-app.get('/api/test-email', async (req, res) => {
-  const { Resend } = require('resend');
-  const resend = new Resend(process.env.RESEND_API_KEY);
-  try {
-    await resend.emails.send({
-      from: 'Order It <onboarding@resend.dev>',
-      to:   process.env.EMAIL_USER,
-      subject: 'Test from Render',
-      html: '<p>Email works on Render via Resend!</p>',
-    });
-    res.json({ ok: true, sentTo: process.env.EMAIL_USER });
-  } catch (e) {
-    res.json({ ok: false, error: e.message });
-  }
-});
-
 app.get('/api/test', (req, res) => res.json({ msg: 'Order It API running' }));
 
 const PORT = process.env.PORT || 5000;
