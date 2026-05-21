@@ -14,6 +14,9 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false,
   },
   family: 4,
+  connectionTimeout: 8000,  // fail after 8 seconds, not 60+
+  greetingTimeout:   8000,
+  socketTimeout:     8000,
 });
 
 const sendEmail = async ({ to, subject, html }) => {
@@ -25,6 +28,7 @@ const sendEmail = async ({ to, subject, html }) => {
     console.log('✅ Email sent to', to);
   } catch (err) {
     console.error('❌ Email error:', err.message);
+    // Swallow the error — never let email failures bubble up
   }
 };
 
