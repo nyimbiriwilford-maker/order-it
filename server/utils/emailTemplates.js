@@ -19,18 +19,11 @@ const layout = (content) => `
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td>
-                    <!-- Logo SVG inline -->
+                    <!-- Logo — matches app exactly -->
                     <table cellpadding="0" cellspacing="0">
                       <tr>
-                        <td style="background:#fff;border-radius:12px;padding:8px 18px">
-                          <table cellpadding="0" cellspacing="0">
-                            <tr>
-                              <td style="font-size:20px;font-weight:900;color:#1a3a6b;letter-spacing:-0.5px;font-family:Arial,sans-serif">order</td>
-                              <td style="width:6px"></td>
-                              <td style="background:#00c853;border-radius:50%;width:8px;height:8px;vertical-align:middle"></td>
-                              <td style="font-size:20px;font-weight:900;color:#00c853;letter-spacing:-0.5px;font-family:Arial,sans-serif">it</td>
-                            </tr>
-                          </table>
+                        <td style="background:#f0f0f0;border-radius:50px;padding:10px 22px;display:inline-block">
+                          <span style="font-size:22px;font-weight:900;color:#1a3a6b;font-family:Arial,sans-serif;letter-spacing:-0.5px">order</span><span style="font-size:22px;font-weight:900;color:#1a3a6b;font-family:Arial,sans-serif"> </span><span style="font-size:22px;font-weight:900;color:#00c853;font-family:Arial,sans-serif;letter-spacing:-0.5px">·it</span>
                         </td>
                       </tr>
                     </table>
