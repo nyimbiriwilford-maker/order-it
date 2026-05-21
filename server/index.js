@@ -25,27 +25,20 @@ app.use('/api/payouts',             require('./routes/payouts'));
 app.use('/api/visual-search',       require('./routes/visualSearch'));
 require('./jobs/autoConfirm');
 
-// ── Temporary email test route — remove after debugging ──────────────────────
+// ── Temporary email test route — remove after confirming emails work ──────────
 app.get('/api/test-email', async (req, res) => {
-  const nodemailer = require('nodemailer');
-  const t = nodemailer.createTransport({
-    host: '74.125.133.108',  // smtp.gmail.com IPv4 direct
-    port: 465,
-    secure: true,
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    tls: { rejectUnauthorized: false, servername: 'smtp.gmail.com' },
-    connectionTimeout: 10000,
-  });
+  const { Resend } = require('resend');
+  const resend = new Resend(process.env.RESEND_API_KEY);
   try {
-    await t.sendMail({
-      from: process.env.EMAIL_USER,
+    await resend.emails.send({
+      from: 'Order It <onboarding@resend.dev>',
       to:   process.env.EMAIL_USER,
       subject: 'Test from Render',
-      html: '<p>Email works on Render!</p>',
+      html: '<p>Email works on Render via Resend!</p>',
     });
-    res.json({ ok: true, user: process.env.EMAIL_USER });
+    res.json({ ok: true, sentTo: process.env.EMAIL_USER });
   } catch (e) {
-    res.json({ ok: false, error: e.message, user: process.env.EMAIL_USER });
+    res.json({ ok: false, error: e.message });
   }
 });
 

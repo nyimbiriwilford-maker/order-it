@@ -1,28 +1,10 @@
-const nodemailer = require('nodemailer');
-const dns = require('dns');
-dns.setDefaultResultOrder('ipv4first');
-
-const transporter = nodemailer.createTransport({
-  host: '74.125.133.108',  // smtp.gmail.com IPv4 — bypasses IPv6 resolution entirely
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-    servername: 'smtp.gmail.com',  // required when using IP directly
-  },
-  connectionTimeout: 10000,
-  greetingTimeout:   10000,
-  socketTimeout:     10000,
-});
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const sendEmail = async ({ to, subject, html }) => {
   try {
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
+    await resend.emails.send({
+      from: 'Order It <onboarding@resend.dev>',
       to, subject, html,
     });
     console.log('✅ Email sent to', to);
