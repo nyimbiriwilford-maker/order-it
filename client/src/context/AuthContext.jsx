@@ -14,10 +14,10 @@ export function AuthProvider({ children }) {
     setToken(token)
     setUser(user)
 
-    if (user.role === 'retailer')    navigate('/')
-    if (user.role === 'wholesaler')  navigate('/wholesaler')
-    if (user.role === 'logistics')   navigate('/logistics')
-    if (user.role === 'admin')       navigate('/admin')
+    if (user.role === 'retailer')   navigate('/')
+    if (user.role === 'wholesaler') navigate('/wholesaler')
+    if (user.role === 'logistics')  navigate('/logistics')
+    if (user.role === 'admin')      navigate('/admin')
   }
 
   const logout = () => {
@@ -28,8 +28,17 @@ export function AuthProvider({ children }) {
     navigate('/login')
   }
 
+  // Merge partial updates into the stored user object (used by ProfilePage after save)
+  const updateUser = (partial) => {
+    setUser(prev => {
+      const updated = { ...prev, ...partial }
+      localStorage.setItem('user', JSON.stringify(updated))
+      return updated
+    })
+  }
+
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )

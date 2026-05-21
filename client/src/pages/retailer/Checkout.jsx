@@ -2,12 +2,14 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCart } from '../../context/CartContext'
 import { useAuth } from '../../context/AuthContext'
+import { usePrefs } from '../../context/PreferencesContext'
 import Navbar from '../../components/Navbar'
 import api from '../../utils/api'
 
 export default function Checkout() {
   const { cart, total, clearCart } = useCart()
   const { user }                   = useAuth()
+  const { formatPrice }            = usePrefs()
   const navigate                   = useNavigate()
 
   const [step,     setStep]    = useState(1)
@@ -40,7 +42,6 @@ export default function Checkout() {
     if (!address.city) return setError('Please enter a delivery city')
     setError('')
 
-    // Initialise loading state for every group
     const init = {}
     for (const g of groupedCart) {
       init[g.wholesalerId] = { routes: [], selected: null, loading: true, error: '' }
@@ -48,11 +49,9 @@ export default function Checkout() {
     setGroupLogistics(init)
     setStep(3)
 
-    // Fetch per-group in parallel
     await Promise.all(groupedCart.map(async (g) => {
       try {
         const { data } = await api.get(`/logistics/routes/available?to=${address.city}`)
-        // Filter to routes that originate from this wholesaler's city
         const relevant = g.wholesalerCity
           ? data.filter(r => r.originCity?.toLowerCase() === g.wholesalerCity.toLowerCase())
           : data
@@ -140,12 +139,12 @@ export default function Checkout() {
             <div key={i} style={S.stepItem}>
               <div style={{
                 ...S.stepDot,
-                background: i + 1 <= step ? 'linear-gradient(135deg,#1a3a6b,#00c853)' : '#e0e0e0',
-                color:      i + 1 <= step ? '#fff' : '#aaa',
+                background: i + 1 <= step ? 'linear-gradient(135deg,#1a3a6b,#00c853)' : 'var(--bg-subtle)',
+                color:      i + 1 <= step ? '#fff' : 'var(--text-muted)',
               }}>
                 {i + 1 < step ? '✓' : i + 1}
               </div>
-              <span style={{ ...S.stepLabel, color: i + 1 === step ? '#0d2347' : '#aaa' }}>
+              <span style={{ ...S.stepLabel, color: i + 1 === step ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                 {label}
               </span>
             </div>
@@ -154,7 +153,7 @@ export default function Checkout() {
 
         {error && <div style={S.error}>{error}</div>}
 
-        {/* ── Step 1 — Cart Review (grouped by wholesaler) ── */}
+        {/* ── Step 1 — Cart Review ── */}
         {step === 1 && (
           <div>
             <h2 style={S.title}>Review Your Cart</h2>
@@ -176,13 +175,13 @@ export default function Checkout() {
                 {g.items.map(item => (
                   <div key={item._id} style={S.itemRow}>
                     <span style={S.itemName}>{item.name} × {item.quantity}</span>
-                    <span style={S.itemPrice}>MWK {Number(item.price * item.quantity).toLocaleString()}</span>
+                    <span style={S.itemPrice}>{formatPrice(item.price * item.quantity)}</span>
                   </div>
                 ))}
                 <div style={S.groupSubtotal}>
                   <span style={S.groupSubtotalLabel}>Subtotal</span>
                   <span style={S.groupSubtotalValue}>
-                    MWK {Number(g.items.reduce((s, i) => s + i.price * i.quantity, 0)).toLocaleString()}
+                    {formatPrice(g.items.reduce((s, i) => s + i.price * i.quantity, 0))}
                   </span>
                 </div>
               </div>
@@ -190,7 +189,7 @@ export default function Checkout() {
 
             <div style={S.totalRow}>
               <span>Products total</span>
-              <span style={{ fontWeight: '700', color: '#1a3a6b' }}>MWK {Number(total).toLocaleString()}</span>
+              <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatPrice(total)}</span>
             </div>
 
             {groupedCart.length > 1 && (
@@ -220,8 +219,7 @@ export default function Checkout() {
               onChange={e => setAddress({ ...address, country: e.target.value })} />
             <div style={S.btnRow}>
               <button style={S.backBtn} onClick={() => setStep(1)}>← Back</button>
-              <button style={{ ...S.nextBtn, flex: 1, marginTop: 0 }}
-                onClick={fetchAllRoutes}>
+              <button style={{ ...S.nextBtn, flex: 1, marginTop: 0 }} onClick={fetchAllRoutes}>
                 Find Logistics →
               </button>
             </div>
@@ -234,7 +232,7 @@ export default function Checkout() {
             <h2 style={S.title}>Choose Logistics</h2>
             <p style={S.sub}>Each wholesaler needs its own delivery route.</p>
 
-            {groupedCart.map((g, idx) => {
+            {groupedCart.map((g) => {
               const gl = groupLogistics[g.wholesalerId] || {}
               return (
                 <div key={g.wholesalerId} style={S.wholesalerSection}>
@@ -261,14 +259,14 @@ export default function Checkout() {
                       key={route._id}
                       style={{
                         ...S.routeCard,
-                        border:     gl.selected?._id === route._id ? '2px solid #1a3a6b' : '2px solid #e0e0e0',
-                        background: gl.selected?._id === route._id ? '#f0f4ff' : '#fff',
+                        border:     gl.selected?._id === route._id ? '2px solid #1a3a6b' : '2px solid var(--border)',
+                        background: gl.selected?._id === route._id ? 'var(--bg-selected)' : 'var(--bg-card)',
                       }}
                       onClick={() => selectRoute(g.wholesalerId, route)}
                     >
                       <div style={S.routeTop}>
                         <span style={S.routeName}>{route.logisticsCompany?.name}</span>
-                        <span style={S.routePrice}>MWK {Number(route.pricePerDelivery).toLocaleString()}</span>
+                        <span style={S.routePrice}>{formatPrice(route.pricePerDelivery)}</span>
                       </div>
                       <p style={S.routeSub}>
                         {route.originCity} → {route.destinationCity} · {route.estimatedDays} day{route.estimatedDays > 1 ? 's' : ''}
@@ -321,7 +319,7 @@ export default function Checkout() {
                   {g.items.map(item => (
                     <div key={item._id} style={S.itemRow}>
                       <span style={S.itemName}>{item.name} × {item.quantity}</span>
-                      <span style={S.itemPrice}>MWK {Number(item.price * item.quantity).toLocaleString()}</span>
+                      <span style={S.itemPrice}>{formatPrice(item.price * item.quantity)}</span>
                     </div>
                   ))}
 
@@ -334,37 +332,33 @@ export default function Checkout() {
                   <div style={S.miniTotals}>
                     <div style={S.miniRow}>
                       <span>Products</span>
-                      <span>MWK {Number(productTotal).toLocaleString()}</span>
+                      <span>{formatPrice(productTotal)}</span>
                     </div>
                     <div style={S.miniRow}>
                       <span>Delivery</span>
-                      <span>MWK {Number(deliveryFee).toLocaleString()}</span>
+                      <span>{formatPrice(deliveryFee)}</span>
                     </div>
                     <div style={{ ...S.miniRow, ...S.miniTotal }}>
                       <span>Order total</span>
-                      <span>MWK {Number(productTotal + deliveryFee).toLocaleString()}</span>
+                      <span>{formatPrice(productTotal + deliveryFee)}</span>
                     </div>
                   </div>
                 </div>
               )
             })}
 
-            {/* Delivery address summary */}
             <div style={S.confirmAddressCard}>
               <p style={S.confirmSection}>Delivery Address</p>
               <p style={S.confirmText}>{address.street}, {address.city}{address.state ? `, ${address.state}` : ''}, {address.country}</p>
             </div>
 
-            {/* Grand total */}
             <div style={S.grandTotalCard}>
               <div style={S.grandTotalRow}>
                 <span style={S.grandTotalLabel}>Grand Total</span>
-                <span style={S.grandTotalValue}>MWK {Number(grandTotal).toLocaleString()}</span>
+                <span style={S.grandTotalValue}>{formatPrice(grandTotal)}</span>
               </div>
               {groupedCart.length > 1 && (
-                <p style={S.grandTotalSub}>
-                  Across {groupedCart.length} orders
-                </p>
+                <p style={S.grandTotalSub}>Across {groupedCart.length} orders</p>
               )}
             </div>
 
@@ -387,63 +381,63 @@ export default function Checkout() {
 }
 
 const S = {
-  page:                { background: '#f0f0f0', minHeight: '100vh' },
+  page:                { background: 'var(--bg-page)', minHeight: '100vh' },
   body:                { maxWidth: '430px', margin: '0 auto', padding: '16px' },
 
   // Step bar
-  stepBar:             { display: 'flex', justifyContent: 'space-between', marginBottom: '24px', background: '#fff', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  stepBar:             { display: 'flex', justifyContent: 'space-between', marginBottom: '24px', background: 'var(--bg-card)', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   stepItem:            { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flex: 1 },
   stepDot:             { width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700' },
   stepLabel:           { fontSize: '10px', fontWeight: '600', textAlign: 'center' },
 
   // Shared
   error:               { background: '#fff0f0', border: '1px solid #ffcccc', color: '#cc0000', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', marginBottom: '12px' },
-  title:               { fontSize: '18px', fontWeight: '700', color: '#0d2347', margin: '0 0 6px' },
-  sub:                 { fontSize: '13px', color: '#666', margin: '0 0 16px' },
-  input:               { width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e0e0e0', fontSize: '14px', marginBottom: '10px', boxSizing: 'border-box', outline: 'none' },
-  itemRow:             { display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f5f5f5', fontSize: '13px', color: '#444' },
-  itemName:            { color: '#444' },
-  itemPrice:           { fontWeight: '600', color: '#0d2347' },
+  title:               { fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 6px' },
+  sub:                 { fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 16px' },
+  input:               { width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px', marginBottom: '10px', boxSizing: 'border-box', outline: 'none', background: 'var(--bg-input)', color: 'var(--text-primary)' },
+  itemRow:             { display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--border-subtle)', fontSize: '13px' },
+  itemName:            { color: 'var(--text-secondary)' },
+  itemPrice:           { fontWeight: '600', color: 'var(--text-primary)' },
   nextBtn:             { width: '100%', padding: '13px', background: 'linear-gradient(135deg,#1a3a6b,#00c853)', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginTop: '16px' },
-  backBtn:             { padding: '13px 20px', background: '#f5f5f5', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', marginTop: '16px', whiteSpace: 'nowrap' },
+  backBtn:             { padding: '13px 20px', background: 'var(--bg-subtle)', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', marginTop: '16px', whiteSpace: 'nowrap', color: 'var(--text-primary)' },
   btnRow:              { display: 'flex', gap: '10px', alignItems: 'flex-end', marginTop: '16px' },
 
   // Wholesaler group sections
-  wholesalerSection:   { background: '#fff', borderRadius: '12px', padding: '14px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  wholesalerSection:   { background: 'var(--bg-card)', borderRadius: '12px', padding: '14px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   wholesalerHeader:    { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' },
   wholesalerIcon:      { fontSize: '22px' },
-  wholesalerName:      { fontWeight: '700', color: '#0d2347', fontSize: '14px', margin: 0 },
-  wholesalerCity:      { fontSize: '11px', color: '#888', margin: '2px 0 0' },
-  groupSubtotal:       { display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: '1px solid #f0f0f0' },
-  groupSubtotalLabel:  { fontSize: '12px', color: '#888', fontWeight: '600' },
-  groupSubtotalValue:  { fontSize: '13px', color: '#1a3a6b', fontWeight: '700' },
+  wholesalerName:      { fontWeight: '700', color: 'var(--text-primary)', fontSize: '14px', margin: 0 },
+  wholesalerCity:      { fontSize: '11px', color: 'var(--text-muted)', margin: '2px 0 0' },
+  groupSubtotal:       { display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginTop: '4px', borderTop: '1px solid var(--border-subtle)' },
+  groupSubtotalLabel:  { fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600' },
+  groupSubtotalValue:  { fontSize: '13px', color: 'var(--text-primary)', fontWeight: '700' },
   groupSelectedBadge:  { marginLeft: 'auto', fontSize: '11px', color: '#00c853', fontWeight: '700', background: '#e8fdf0', padding: '3px 8px', borderRadius: '20px' },
 
   // Totals on step 1
-  totalRow:            { display: 'flex', justifyContent: 'space-between', padding: '12px 0', fontSize: '15px' },
+  totalRow:            { display: 'flex', justifyContent: 'space-between', padding: '12px 0', fontSize: '15px', color: 'var(--text-primary)' },
   splitBadge:          { background: '#fff9e6', border: '1px solid #f59e0b', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#92680a', marginBottom: '4px' },
 
   // Logistics
-  loadingText:         { fontSize: '13px', color: '#aaa', padding: '8px 0' },
+  loadingText:         { fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' },
   groupError:          { fontSize: '13px', color: '#cc0000', padding: '8px 0' },
   routeCard:           { borderRadius: '10px', padding: '12px 14px', marginBottom: '8px', cursor: 'pointer' },
   routeTop:            { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  routeName:           { fontWeight: '700', color: '#0d2347', fontSize: '14px' },
-  routePrice:          { fontWeight: '700', color: '#1a3a6b', fontSize: '14px' },
-  routeSub:            { fontSize: '12px', color: '#888', margin: '4px 0 0' },
+  routeName:           { fontWeight: '700', color: 'var(--text-primary)', fontSize: '14px' },
+  routePrice:          { fontWeight: '700', color: 'var(--text-primary)', fontSize: '14px' },
+  routeSub:            { fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0' },
   selectedLabel:       { fontSize: '12px', color: '#00c853', fontWeight: '700', margin: '6px 0 0' },
 
   // Confirm step
-  confirmCard:         { background: '#fff', borderRadius: '12px', padding: '16px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
-  confirmCardHeader:   { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0' },
-  confirmOrderLabel:   { fontSize: '11px', fontWeight: '700', color: '#aaa', textTransform: 'uppercase' },
-  confirmWholesalerName: { fontSize: '13px', fontWeight: '700', color: '#0d2347' },
-  confirmSection:      { fontSize: '11px', fontWeight: '700', color: '#aaa', textTransform: 'uppercase', margin: '10px 0 6px' },
-  confirmText:         { fontSize: '13px', color: '#444', margin: '2px 0' },
-  miniTotals:          { marginTop: '10px', borderTop: '1px solid #f0f0f0', paddingTop: '8px' },
-  miniRow:             { display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#666', padding: '3px 0' },
-  miniTotal:           { fontWeight: '700', color: '#0d2347', fontSize: '14px', borderTop: '1px solid #f0f0f0', marginTop: '4px', paddingTop: '6px' },
-  confirmAddressCard:  { background: '#fff', borderRadius: '12px', padding: '16px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  confirmCard:         { background: 'var(--bg-card)', borderRadius: '12px', padding: '16px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+  confirmCardHeader:   { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' },
+  confirmOrderLabel:   { fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' },
+  confirmWholesalerName: { fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' },
+  confirmSection:      { fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', margin: '10px 0 6px' },
+  confirmText:         { fontSize: '13px', color: 'var(--text-secondary)', margin: '2px 0' },
+  miniTotals:          { marginTop: '10px', borderTop: '1px solid var(--border-subtle)', paddingTop: '8px' },
+  miniRow:             { display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--text-secondary)', padding: '3px 0' },
+  miniTotal:           { fontWeight: '700', color: 'var(--text-primary)', fontSize: '14px', borderTop: '1px solid var(--border-subtle)', marginTop: '4px', paddingTop: '6px' },
+  confirmAddressCard:  { background: 'var(--bg-card)', borderRadius: '12px', padding: '16px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
   grandTotalCard:      { background: 'linear-gradient(135deg,#1a3a6b,#00c853)', borderRadius: '12px', padding: '16px 20px', marginBottom: '16px' },
   grandTotalRow:       { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   grandTotalLabel:     { color: 'rgba(255,255,255,0.85)', fontSize: '13px', fontWeight: '600' },

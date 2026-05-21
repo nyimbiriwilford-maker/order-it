@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { usePrefs } from '../../context/PreferencesContext'
 import api from '../../utils/api'
 
 const REASONS = [
@@ -11,44 +12,45 @@ const REASONS = [
 
 const S = {
   page: {
-    minHeight: '100vh', background: '#f0f0f0',
+    minHeight: '100vh', background: 'var(--bg-page)',
     fontFamily: 'Arial, sans-serif',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     padding: '32px 16px',
   },
   card: {
-    background: '#fff', borderRadius: '16px',
+    background: 'var(--bg-card)', borderRadius: '16px',
     boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
     padding: '36px 32px', width: '100%', maxWidth: '520px',
   },
   back: {
     display: 'inline-flex', alignItems: 'center', gap: '6px',
-    color: '#888', fontSize: '13px', cursor: 'pointer',
+    color: 'var(--text-muted)', fontSize: '13px', cursor: 'pointer',
     marginBottom: '20px', background: 'none', border: 'none', padding: 0,
   },
-  title:    { fontSize: '22px', fontWeight: 'bold', color: '#1a3a6b', marginBottom: '4px' },
-  subtitle: { fontSize: '13px', color: '#888', marginBottom: '28px' },
+  title:    { fontSize: '22px', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '4px' },
+  subtitle: { fontSize: '13px', color: 'var(--text-muted)', marginBottom: '28px' },
   orderBox: {
-    background: '#f0f4ff', borderRadius: '10px',
+    background: 'var(--bg-selected)', borderRadius: '10px',
     padding: '14px 16px', marginBottom: '24px',
   },
-  orderLabel: { fontSize: '11px', color: '#1a3a6b', fontWeight: '700', textTransform: 'uppercase', marginBottom: '4px' },
-  orderValue: { fontSize: '14px', color: '#222', fontWeight: '600' },
-  orderMeta:  { fontSize: '12px', color: '#888', marginTop: '2px' },
+  orderLabel: { fontSize: '11px', color: 'var(--text-primary)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '4px' },
+  orderValue: { fontSize: '14px', color: 'var(--text-primary)', fontWeight: '600' },
+  orderMeta:  { fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' },
   field:    { marginBottom: '18px' },
-  label:    { display: 'block', fontSize: '13px', fontWeight: '600', color: '#333', marginBottom: '6px' },
+  label:    { display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' },
   select: {
-    width: '100%', padding: '10px 12px', border: '1px solid #ddd',
-    borderRadius: '8px', fontSize: '14px', background: '#fff',
-    cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
+    width: '100%', padding: '10px 12px', border: '1px solid var(--border)',
+    borderRadius: '8px', fontSize: '14px', background: 'var(--bg-input)',
+    color: 'var(--text-primary)', cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
   },
   textarea: {
-    width: '100%', padding: '10px 12px', border: '1px solid #ddd',
+    width: '100%', padding: '10px 12px', border: '1px solid var(--border)',
     borderRadius: '8px', fontSize: '14px', resize: 'vertical',
     minHeight: '120px', outline: 'none', boxSizing: 'border-box',
     fontFamily: 'Arial, sans-serif', lineHeight: '1.5',
+    background: 'var(--bg-input)', color: 'var(--text-primary)',
   },
-  charCount: { fontSize: '11px', color: '#aaa', textAlign: 'right', marginTop: '4px' },
+  charCount: { fontSize: '11px', color: 'var(--text-muted)', textAlign: 'right', marginTop: '4px' },
   warning: {
     background: '#fff8e1', border: '1px solid #ffe082',
     borderRadius: '8px', padding: '12px 14px',
@@ -61,7 +63,7 @@ const S = {
     fontWeight: '700', cursor: 'pointer', marginTop: '4px',
   },
   submitBtnDisabled: {
-    width: '100%', padding: '13px', background: '#ccc', color: '#fff',
+    width: '100%', padding: '13px', background: 'var(--bg-subtle)', color: 'var(--text-muted)',
     border: 'none', borderRadius: '10px', fontSize: '15px',
     fontWeight: '700', cursor: 'not-allowed', marginTop: '4px',
   },
@@ -77,25 +79,22 @@ const S = {
   },
   spinner: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    height: '200px', color: '#888', fontSize: '14px',
+    height: '200px', color: 'var(--text-muted)', fontSize: '14px',
   },
 }
 
-function formatMWK(v) {
-  return 'MWK ' + Number(v || 0).toLocaleString()
-}
-
 export default function RaiseDispute() {
-  const { id }     = useParams()   // order id from URL
+  const { id }     = useParams()
   const navigate   = useNavigate()
+  const { formatPrice } = usePrefs()
 
-  const [order,       setOrder]       = useState(null)
-  const [loadingOrder,setLoadingOrder]= useState(true)
-  const [reason,      setReason]      = useState('')
-  const [description, setDescription] = useState('')
-  const [submitting,  setSubmitting]  = useState(false)
-  const [error,       setError]       = useState('')
-  const [success,     setSuccess]     = useState(false)
+  const [order,        setOrder]        = useState(null)
+  const [loadingOrder, setLoadingOrder] = useState(true)
+  const [reason,       setReason]       = useState('')
+  const [description,  setDescription]  = useState('')
+  const [submitting,   setSubmitting]   = useState(false)
+  const [error,        setError]        = useState('')
+  const [success,      setSuccess]      = useState(false)
 
   useEffect(() => {
     async function loadOrder() {
@@ -113,17 +112,13 @@ export default function RaiseDispute() {
 
   async function handleSubmit() {
     setError('')
-    if (!reason)           return setError('Please select a reason.')
+    if (!reason) return setError('Please select a reason.')
     if (description.trim().length < 20)
       return setError('Please describe the issue in at least 20 characters.')
 
     setSubmitting(true)
     try {
-      await api.post('/disputes', {
-        orderId: id,
-        reason,
-        description: description.trim(),
-      })
+      await api.post('/disputes', { orderId: id, reason, description: description.trim() })
       setSuccess(true)
     } catch (err) {
       setError(err.response?.data?.msg || 'Failed to raise dispute. Please try again.')
@@ -140,10 +135,10 @@ export default function RaiseDispute() {
         <div style={S.card}>
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚖️</div>
-            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1a3a6b', marginBottom: '8px' }}>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '8px' }}>
               Dispute Raised
             </div>
-            <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.6', marginBottom: '28px' }}>
+            <div style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '28px' }}>
               Your dispute has been submitted. Our admin team will review it and contact you with a resolution.
             </div>
             <button
@@ -169,13 +164,12 @@ export default function RaiseDispute() {
         <div style={S.title}>Raise a Dispute</div>
         <div style={S.subtitle}>Tell us what went wrong with your order</div>
 
-        {/* Order summary */}
         {order && (
           <div style={S.orderBox}>
             <div style={S.orderLabel}>Order</div>
             <div style={S.orderValue}>#{String(order._id).slice(-8).toUpperCase()}</div>
             <div style={S.orderMeta}>
-              {formatMWK(order.totalAmount)} ·{' '}
+              {formatPrice(order.totalAmount)} ·{' '}
               {order.items?.length} item{order.items?.length !== 1 ? 's' : ''} ·{' '}
               Status: <strong>{order.orderStatus}</strong>
             </div>
@@ -188,7 +182,6 @@ export default function RaiseDispute() {
           ⚠ Disputes are reviewed by our admin team. Please only raise a dispute if you have a genuine issue. False disputes may result in account suspension.
         </div>
 
-        {/* Reason */}
         <div style={S.field}>
           <label style={S.label}>What is the issue?</label>
           <select style={S.select} value={reason} onChange={e => setReason(e.target.value)}>
@@ -199,7 +192,6 @@ export default function RaiseDispute() {
           </select>
         </div>
 
-        {/* Description */}
         <div style={S.field}>
           <label style={S.label}>Describe the problem</label>
           <textarea

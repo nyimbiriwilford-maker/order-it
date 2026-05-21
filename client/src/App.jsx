@@ -1,11 +1,16 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider } from './context/AuthContext'
-import { CartProvider } from './context/CartContext'
-import ProtectedRoute from './components/ProtectedRoute'
+import { AuthProvider }  from './context/AuthContext'
+import { CartProvider }  from './context/CartContext'
+import { PrefsProvider } from './context/PreferencesContext'
+import ProtectedRoute    from './components/ProtectedRoute'
+import './theme.css'
 
 // Auth
 import Login    from './pages/auth/Login'
 import Register from './pages/auth/Register'
+
+// Shared
+import ProfilePage from './pages/retailer/ProfilePage'
 
 // Retailer
 import Home         from './pages/retailer/Home'
@@ -28,30 +33,34 @@ import LogisticsRoutes    from './pages/logistics/Routes'
 import LogisticsEarnings  from './pages/logistics/Earnings'
 
 // Admin
-import AdminDashboard      from './pages/admin/Dashboard'
-import AdminOrders         from './pages/admin/Orders'
-import AdminOrderDetail    from './pages/admin/OrderDetail'
-import AdminLogistics      from './pages/admin/Logistics'
-import AdminUsers          from './pages/admin/Users'
-import AdminDisputes       from './pages/admin/Disputes'
-import AdminAuditLog       from './pages/admin/AuditLog'
-import AdminEscrow         from './pages/admin/Escrow'
-import AdminAnalytics      from './pages/admin/Analytics'
-import AdminConfig         from './pages/admin/AdminConfig'
-import AdminNotifications  from './pages/admin/Notifications'
-import AdminPaymentsLog    from './pages/admin/PaymentsLog'
-import AdminRevenue        from './pages/admin/Revenue'           // ← NEW
+import AdminDashboard     from './pages/admin/Dashboard'
+import AdminOrders        from './pages/admin/Orders'
+import AdminOrderDetail   from './pages/admin/OrderDetail'
+import AdminLogistics     from './pages/admin/Logistics'
+import AdminUsers         from './pages/admin/Users'
+import AdminDisputes      from './pages/admin/Disputes'
+import AdminAuditLog      from './pages/admin/AuditLog'
+import AdminEscrow        from './pages/admin/Escrow'
+import AdminAnalytics     from './pages/admin/Analytics'
+import AdminConfig        from './pages/admin/AdminConfig'
+import AdminNotifications from './pages/admin/Notifications'
+import AdminPaymentsLog   from './pages/admin/PaymentsLog'
+import AdminRevenue       from './pages/admin/Revenue'
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <PrefsProvider>
         <CartProvider>
           <Routes>
 
             {/* ── Public ─────────────────────────────────────────────────── */}
             <Route path="/login"    element={<Login />} />
             <Route path="/register" element={<Register />} />
+
+            {/* ── Shared (all authenticated roles) ───────────────────────── */}
+            <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
 
             {/* ── Retailer ───────────────────────────────────────────────── */}
             <Route path="/"            element={<ProtectedRoute role="retailer"><Home /></ProtectedRoute>} />
@@ -86,13 +95,14 @@ export default function App() {
             <Route path="/admin/config"        element={<ProtectedRoute role="admin"><AdminConfig /></ProtectedRoute>} />
             <Route path="/admin/notifications" element={<ProtectedRoute role="admin"><AdminNotifications /></ProtectedRoute>} />
             <Route path="/admin/payments"      element={<ProtectedRoute role="admin"><AdminPaymentsLog /></ProtectedRoute>} />
-            <Route path="/admin/revenue"       element={<ProtectedRoute role="admin"><AdminRevenue /></ProtectedRoute>} />  {/* ← NEW */}
+            <Route path="/admin/revenue"       element={<ProtectedRoute role="admin"><AdminRevenue /></ProtectedRoute>} />
 
             {/* ── Fallback ───────────────────────────────────────────────── */}
             <Route path="*" element={<Navigate to="/login" />} />
 
           </Routes>
         </CartProvider>
+        </PrefsProvider>
       </AuthProvider>
     </BrowserRouter>
   )

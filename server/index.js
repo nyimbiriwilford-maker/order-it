@@ -22,6 +22,7 @@ app.use('/api/upload',              require('./routes/upload'));
 app.use('/api/disputes',            require('./routes/disputes'));
 app.use('/api/config',              require('./routes/config'));
 app.use('/api/payouts',             require('./routes/payouts'));
+app.use('/api/visual-search', require('./routes/visualSearch'));
 require('./jobs/autoConfirm');
 
 app.get('/api/test', (req, res) => res.json({ msg: 'Order It API running' }));
