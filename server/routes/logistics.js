@@ -4,6 +4,40 @@ const Route            = require('../models/Route');
 const Order            = require('../models/Order');
 const LogisticsRating  = require('../models/LogisticsRating');
 const auth             = require('../middleware/auth');
+const sendEmail        = require('../utils/sendEmail');
+const { orderStatusUpdateRetailer } = require('../utils/emailTemplates');
+
+// Fire-and-forget helper
+function fireEmail(params) {
+  if (!params.to) return;
+  sendEmail(params).catch(err => console.error('❌ Background email error:', err.message));
+}
+
+// Simple branded email builder
+function buildSimpleEmail(title, bodyHtml) {
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px">
+        <tr><td style="background:linear-gradient(135deg,#1a3a6b,#0d6efd 50%,#00c853);border-radius:16px 16px 0 0;padding:28px 40px">
+          <table cellpadding="0" cellspacing="0"><tr>
+            <td style="background:#f0f0f0;border-radius:50px;padding:10px 22px">
+              <span style="font-size:22px;font-weight:900;color:#1a3a6b;font-family:Arial,sans-serif">order</span><span style="font-size:22px;font-weight:900;color:#00c853;font-family:Arial,sans-serif"> ·it</span>
+            </td>
+          </tr></table>
+        </td></tr>
+        <tr><td style="background:#fff;border-left:1px solid #e8e8e8;border-right:1px solid #e8e8e8;padding:40px">
+          <h2 style="margin:0 0 16px;color:#1a3a6b;font-size:22px">${title}</h2>
+          <p style="margin:0;color:#555;font-size:15px;line-height:1.7">${bodyHtml}</p>
+        </td></tr>
+        <tr><td style="background:#1a3a6b;border-radius:0 0 16px 16px;padding:20px 40px">
+          <p style="margin:0;color:rgba(255,255,255,0.6);font-size:12px">Order It — B2B E-Commerce Platform · Malawi<br/>This is an automated message. Please do not reply.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
 
 // ── Register logistics company ────────────────────────────────────────────────
 router.post('/register', auth, async (req, res) => {
@@ -118,16 +152,36 @@ router.get('/orders', auth, auth.logisticsOnly, async (req, res) => {
 router.put('/orders/:id/collect', auth, auth.logisticsOnly, async (req, res) => {
   try {
     const company = await LogisticsCompany.findOne({ user: req.user.id });
-    const order   = await Order.findById(req.params.id);
+    const order   = await Order.findById(req.params.id)
+      .populate('retailer',   'name email')
+      .populate('wholesaler', 'name email businessName');
+
     if (!order) return res.status(404).json({ msg: 'Order not found' });
     if (order.logisticsCompany.toString() !== company._id.toString()) {
       return res.status(403).json({ msg: 'Not your order' });
     }
 
-    order.orderStatus   = 'collected';
+    order.orderStatus    = 'collected';
     order.deliveryStatus = 'collected';
     await order.save();
     res.json(order);
+
+    const shortId = order._id.toString().slice(-8).toUpperCase();
+
+    // → Retailer: goods collected
+    fireEmail({ to: order.retailer?.email,
+      ...orderStatusUpdateRetailer({ retailerName: order.retailer.name, orderId: shortId, status: 'collected', message: `${company.name} has collected your goods from the wholesaler and will be in touch shortly.` }) });
+
+    // → Wholesaler: goods collected confirmation
+    const wholesalerEmail = order.wholesaler?.email;
+    if (wholesalerEmail) {
+      fireEmail({
+        to:      wholesalerEmail,
+        subject: `📦 Order #${shortId} collected by logistics`,
+        html:    buildSimpleEmail('Goods Collected 📦', `<strong>${company.name}</strong> has collected the goods for order <strong>#${shortId}</strong>. The order is now on its way to the retailer.`),
+      });
+    }
+
   } catch (err) {
     res.status(500).json({ msg: 'Server error' });
   }
@@ -137,7 +191,9 @@ router.put('/orders/:id/collect', auth, auth.logisticsOnly, async (req, res) => 
 router.put('/orders/:id/dispatch', auth, auth.logisticsOnly, async (req, res) => {
   try {
     const company = await LogisticsCompany.findOne({ user: req.user.id });
-    const order   = await Order.findById(req.params.id);
+    const order   = await Order.findById(req.params.id)
+      .populate('retailer', 'name email');
+
     if (!order) return res.status(404).json({ msg: 'Order not found' });
     if (order.logisticsCompany.toString() !== company._id.toString()) {
       return res.status(403).json({ msg: 'Not your order' });
@@ -152,6 +208,16 @@ router.put('/orders/:id/dispatch', auth, auth.logisticsOnly, async (req, res) =>
     }
     await order.save();
     res.json(order);
+
+    const shortId = order._id.toString().slice(-8).toUpperCase();
+    const eta     = order.estimatedDeliveryDate
+      ? `Estimated delivery: <strong>${order.estimatedDeliveryDate.toDateString()}</strong>.`
+      : '';
+
+    // → Retailer: out for delivery
+    fireEmail({ to: order.retailer?.email,
+      ...orderStatusUpdateRetailer({ retailerName: order.retailer.name, orderId: shortId, status: 'in_transit', message: `Your order is now out for delivery with ${company.name}. ${eta}` }) });
+
   } catch (err) {
     res.status(500).json({ msg: 'Server error' });
   }
@@ -161,7 +227,10 @@ router.put('/orders/:id/dispatch', auth, auth.logisticsOnly, async (req, res) =>
 router.put('/orders/:id/deliver', auth, auth.logisticsOnly, async (req, res) => {
   try {
     const company = await LogisticsCompany.findOne({ user: req.user.id });
-    const order   = await Order.findById(req.params.id);
+    const order   = await Order.findById(req.params.id)
+      .populate('retailer',   'name email')
+      .populate('wholesaler', 'name email businessName');
+
     if (!order) return res.status(404).json({ msg: 'Order not found' });
     if (order.logisticsCompany.toString() !== company._id.toString()) {
       return res.status(403).json({ msg: 'Not your order' });
@@ -175,6 +244,23 @@ router.put('/orders/:id/deliver', auth, auth.logisticsOnly, async (req, res) => 
     order.autoConfirmAt  = autoConfirm;
     await order.save();
     res.json(order);
+
+    const shortId = order._id.toString().slice(-8).toUpperCase();
+
+    // → Retailer: delivered — prompt to confirm
+    fireEmail({ to: order.retailer?.email,
+      ...orderStatusUpdateRetailer({ retailerName: order.retailer.name, orderId: shortId, status: 'delivered', message: 'Your order has been delivered! Please log in and confirm receipt to release payment to the wholesaler and logistics company. If you do not confirm within 2 days, it will be confirmed automatically.' }) });
+
+    // → Wholesaler: delivered notification
+    const wholesalerEmail = order.wholesaler?.email;
+    if (wholesalerEmail) {
+      fireEmail({
+        to:      wholesalerEmail,
+        subject: `🏠 Order #${shortId} delivered to retailer`,
+        html:    buildSimpleEmail('Order Delivered 🏠', `Order <strong>#${shortId}</strong> has been successfully delivered to the retailer by <strong>${company.name}</strong>. Payment will be released once the retailer confirms receipt (or automatically within 2 days).`),
+      });
+    }
+
   } catch (err) {
     res.status(500).json({ msg: 'Server error' });
   }
@@ -195,7 +281,6 @@ router.post('/ratings', auth, auth.retailerOnly, async (req, res) => {
       rating, comment,
     });
 
-    // Update average rating on company
     const ratings = await LogisticsRating.find({ logisticsCompany: order.logisticsCompany });
     const avg = ratings.reduce((s, r) => s + r.rating, 0) / ratings.length;
     await LogisticsCompany.findByIdAndUpdate(order.logisticsCompany, {

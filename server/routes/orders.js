@@ -2,6 +2,7 @@ const router           = require('express').Router();
 const Order            = require('../models/Order');
 const Product          = require('../models/Product');
 const Config           = require('../models/Config');
+const User             = require('../models/User');
 const auth             = require('../middleware/auth');
 const sendEmail        = require('../utils/sendEmail');
 const checkStockAlerts = require('../utils/checkStockAlerts');
@@ -11,6 +12,7 @@ const {
   newOrderNotificationWholesaler,
   newAssignmentNotificationLogistics,
   readyForCollectionNotificationLogistics,
+  orderStatusUpdateRetailer,
 } = require('../utils/emailTemplates');
 
 // Helper — reads platform fee % from Config DB, falls back to .env, then 2%
@@ -21,17 +23,16 @@ async function calcFees(productTotal, deliveryFee) {
     if (cfg && cfg.value != null && parseFloat(cfg.value) >= 0) {
       feePercent = parseFloat(cfg.value);
     }
-  } catch (_) {
-    // If DB read fails, fall back to .env value already set above
-  }
+  } catch (_) {}
   const platformFee        = parseFloat(((productTotal * feePercent) / 100).toFixed(2));
   const amountToWholesaler = parseFloat((productTotal - platformFee).toFixed(2));
   const amountToLogistics  = deliveryFee || 0;
   return { platformFee, amountToWholesaler, amountToLogistics, feePercent };
 }
 
-// Fire-and-forget helper — sends email in background, never blocks response
+// Fire-and-forget — never blocks response
 function fireEmail(params) {
+  if (!params.to) return; // skip if no email address
   sendEmail(params).catch(err => console.error('❌ Background email error:', err.message));
 }
 
@@ -88,22 +89,32 @@ router.post('/', auth, auth.retailerOnly, async (req, res) => {
       if (updated) await checkStockAlerts(updated._id, updated.stock, updated.name);
     }
 
-    // Send response immediately — don't wait for emails
     res.status(201).json(order);
 
-    // Emails fire in the background after response is already sent
+    // Background emails
     const populated = await Order.findById(order._id)
-      .populate('retailer', 'name email')
+      .populate('retailer',         'name email')
+      .populate('wholesaler',       'name email businessName')
       .populate('logisticsCompany', 'name email contactEmail');
 
     const shortId = order._id.toString().slice(-8).toUpperCase();
 
-    fireEmail({ to: populated.retailer.email, ...orderConfirmationRetailer({ retailerName: populated.retailer.name, orderId: shortId, items: enrichedItems, totalAmount }) });
-    fireEmail({ to: process.env.EMAIL_USER, ...newOrderNotificationWholesaler({ orderId: shortId, retailerName: populated.retailer.name, retailerEmail: populated.retailer.email, items: enrichedItems, totalAmount }) });
+    // → Retailer
+    fireEmail({ to: populated.retailer.email,
+      ...orderConfirmationRetailer({ retailerName: populated.retailer.name, orderId: shortId, items: enrichedItems, totalAmount }) });
 
+    // → Wholesaler (actual wholesaler email, not hardcoded)
+    const wholesalerEmail = populated.wholesaler?.email;
+    if (wholesalerEmail) {
+      fireEmail({ to: wholesalerEmail,
+        ...newOrderNotificationWholesaler({ orderId: shortId, retailerName: populated.retailer.name, retailerEmail: populated.retailer.email, items: enrichedItems, totalAmount }) });
+    }
+
+    // → Logistics
     const logisticsEmail = populated.logisticsCompany?.contactEmail || populated.logisticsCompany?.email;
     if (logisticsEmail) {
-      fireEmail({ to: logisticsEmail, ...newAssignmentNotificationLogistics({ logisticsName: populated.logisticsCompany.name, orderId: shortId, retailerName: populated.retailer.name, retailerEmail: populated.retailer.email, deliveryAddress: order.deliveryAddress, items: enrichedItems, totalAmount, deliveryFee: order.deliveryFee }) });
+      fireEmail({ to: logisticsEmail,
+        ...newAssignmentNotificationLogistics({ logisticsName: populated.logisticsCompany.name, orderId: shortId, retailerName: populated.retailer.name, retailerEmail: populated.retailer.email, deliveryAddress: order.deliveryAddress, items: enrichedItems, totalAmount, deliveryFee: order.deliveryFee }) });
     }
 
   } catch (err) {
@@ -112,7 +123,7 @@ router.post('/', auth, auth.retailerOnly, async (req, res) => {
   }
 });
 
-// ── Place multiple orders (retailer — one per wholesaler group) ───────────────
+// ── Place multiple orders (one per wholesaler group) ─────────────────────────
 router.post('/multi', auth, auth.retailerOnly, async (req, res) => {
   try {
     const { groups, deliveryAddress } = req.body;
@@ -174,23 +185,33 @@ router.post('/multi', auth, auth.retailerOnly, async (req, res) => {
       createdOrders.push(order);
     }
 
-    // Send response immediately — don't wait for emails
     res.status(201).json(createdOrders);
 
-    // Emails fire in the background after response is already sent
+    // Background emails for each order
     for (const order of createdOrders) {
       const populated = await Order.findById(order._id)
-        .populate('retailer', 'name email')
+        .populate('retailer',         'name email')
+        .populate('wholesaler',       'name email businessName')
         .populate('logisticsCompany', 'name email contactEmail');
 
       const shortId = order._id.toString().slice(-8).toUpperCase();
 
-      fireEmail({ to: populated.retailer.email, ...orderConfirmationRetailer({ retailerName: populated.retailer.name, orderId: shortId, items: order.items, totalAmount: order.totalAmount }) });
-      fireEmail({ to: process.env.EMAIL_USER, ...newOrderNotificationWholesaler({ orderId: shortId, retailerName: populated.retailer.name, retailerEmail: populated.retailer.email, items: order.items, totalAmount: order.totalAmount }) });
+      // → Retailer
+      fireEmail({ to: populated.retailer.email,
+        ...orderConfirmationRetailer({ retailerName: populated.retailer.name, orderId: shortId, items: order.items, totalAmount: order.totalAmount }) });
 
+      // → Wholesaler (actual wholesaler email)
+      const wholesalerEmail = populated.wholesaler?.email;
+      if (wholesalerEmail) {
+        fireEmail({ to: wholesalerEmail,
+          ...newOrderNotificationWholesaler({ orderId: shortId, retailerName: populated.retailer.name, retailerEmail: populated.retailer.email, items: order.items, totalAmount: order.totalAmount }) });
+      }
+
+      // → Logistics
       const logisticsEmail = populated.logisticsCompany?.contactEmail || populated.logisticsCompany?.email;
       if (logisticsEmail) {
-        fireEmail({ to: logisticsEmail, ...newAssignmentNotificationLogistics({ logisticsName: populated.logisticsCompany.name, orderId: shortId, retailerName: populated.retailer.name, retailerEmail: populated.retailer.email, deliveryAddress: order.deliveryAddress, items: order.items, totalAmount: order.totalAmount, deliveryFee: order.deliveryFee }) });
+        fireEmail({ to: logisticsEmail,
+          ...newAssignmentNotificationLogistics({ logisticsName: populated.logisticsCompany.name, orderId: shortId, retailerName: populated.retailer.name, retailerEmail: populated.retailer.email, deliveryAddress: order.deliveryAddress, items: order.items, totalAmount: order.totalAmount, deliveryFee: order.deliveryFee }) });
       }
     }
 
@@ -253,46 +274,47 @@ router.put('/:id/status', auth, auth.wholesalerOnly, async (req, res) => {
       { status, orderStatus: statusMap[status] || status },
       { new: true }
     )
-      .populate('retailer', 'name email')
+      .populate('retailer',         'name email')
+      .populate('wholesaler',       'name email businessName phone')
       .populate('logisticsCompany', 'name email contactEmail')
-      .populate('items.product', 'name');
+      .populate('items.product',    'name');
 
-    // Send response immediately
     res.json(order);
 
-    // Emails fire in the background
     const shortId = order._id.toString().slice(-8).toUpperCase();
-    const labels  = { confirmed: 'confirmed ✅', shipped: 'ready for collection 🏭', cancelled: 'cancelled ❌' };
 
-    if (labels[status] && order.retailer?.email) {
-      fireEmail({
-        to:      order.retailer.email,
-        subject: `Your order has been ${labels[status]} — #${shortId}`,
-        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:linear-gradient(135deg,#1a3a6b,#00c853);padding:24px 32px;border-radius:12px 12px 0 0"><h1 style="color:#fff;margin:0">Order It</h1></div><div style="background:#fff;padding:32px;border:1px solid #f0f0f0;border-radius:0 0 12px 12px"><h2>Order #${shortId} update</h2><p>Hi ${order.retailer.name}, your order status is now: <strong>${labels[status]}</strong></p></div></div>`
-      });
+    // → Retailer: order confirmed or cancelled
+    if ((status === 'confirmed' || status === 'cancelled') && order.retailer?.email) {
+      const orderStatus = status === 'confirmed' ? 'confirmed' : 'cancelled';
+      const message = status === 'confirmed'
+        ? 'Your wholesaler has confirmed your order. Goods are now being prepared.'
+        : 'Unfortunately your order has been cancelled by the wholesaler.';
+      fireEmail({ to: order.retailer.email,
+        ...orderStatusUpdateRetailer({ retailerName: order.retailer.name, orderId: shortId, status: orderStatus, message }) });
     }
 
+    // → Retailer: ready for collection (goods being prepared)
+    if (status === 'shipped' && order.retailer?.email) {
+      fireEmail({ to: order.retailer.email,
+        ...orderStatusUpdateRetailer({ retailerName: order.retailer.name, orderId: shortId, status: 'ready_for_collection', message: 'Your goods are packed and ready. A logistics company will collect and deliver them soon.' }) });
+    }
+
+    // → Logistics: ready for collection notification
     if (status === 'shipped') {
       const logisticsEmail = order.logisticsCompany?.contactEmail || order.logisticsCompany?.email;
       if (logisticsEmail) {
-        const User = require('../models/User');
-        User.findById(req.user.id).select('name phone businessName').lean()
-          .then(wholesaler => {
-            fireEmail({
-              to: logisticsEmail,
-              ...readyForCollectionNotificationLogistics({
-                logisticsName:   order.logisticsCompany.name,
-                orderId:         shortId,
-                retailerName:    order.retailer.name,
-                deliveryAddress: order.deliveryAddress,
-                items:           order.items.map(i => ({ name: i.name || i.product?.name, quantity: i.quantity })),
-                deliveryFee:     order.deliveryFee,
-                wholesalerName:  wholesaler?.businessName || wholesaler?.name || 'Order It Wholesaler',
-                wholesalerPhone: wholesaler?.phone || '',
-              })
-            });
-          })
-          .catch(err => console.error('❌ Wholesaler lookup error:', err.message));
+        const wholesaler = order.wholesaler;
+        fireEmail({ to: logisticsEmail,
+          ...readyForCollectionNotificationLogistics({
+            logisticsName:   order.logisticsCompany.name,
+            orderId:         shortId,
+            retailerName:    order.retailer.name,
+            deliveryAddress: order.deliveryAddress,
+            items:           order.items.map(i => ({ name: i.name || i.product?.name, quantity: i.quantity })),
+            deliveryFee:     order.deliveryFee,
+            wholesalerName:  wholesaler?.businessName || wholesaler?.name || 'Order It Wholesaler',
+            wholesalerPhone: wholesaler?.phone || '',
+          }) });
       }
     }
 
@@ -305,7 +327,10 @@ router.put('/:id/status', auth, auth.wholesalerOnly, async (req, res) => {
 // ── Confirm receipt (retailer) ────────────────────────────────────────────────
 router.put('/:id/confirm', auth, auth.retailerOnly, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id)
+      .populate('wholesaler',       'name email businessName')
+      .populate('logisticsCompany', 'name email contactEmail');
+
     if (!order) return res.status(404).json({ msg: 'Order not found' });
     if (order.retailer.toString() !== req.user.id) return res.status(403).json({ msg: 'Not your order' });
     if (order.orderStatus !== 'delivered') return res.status(400).json({ msg: 'Order not delivered yet' });
@@ -315,8 +340,33 @@ router.put('/:id/confirm', auth, auth.retailerOnly, async (req, res) => {
     order.confirmedAt       = new Date();
     await order.save();
 
-    const released = await releaseEscrow(order._id, 'retailer_confirmed');
+    const released  = await releaseEscrow(order._id, 'retailer_confirmed');
     res.json(released);
+
+    // Background emails
+    const shortId = order._id.toString().slice(-8).toUpperCase();
+    const retailer = await User.findById(req.user.id).select('name email').lean();
+
+    // → Wholesaler: payment released
+    const wholesalerEmail = order.wholesaler?.email;
+    if (wholesalerEmail) {
+      fireEmail({
+        to:      wholesalerEmail,
+        subject: `💰 Payment released — Order #${shortId}`,
+        html:    buildSimpleEmail('Payment Released 💰', `Hi <strong>${order.wholesaler.businessName || order.wholesaler.name}</strong>, the retailer has confirmed delivery of order <strong>#${shortId}</strong>. Your payment has been released to your account.`),
+      });
+    }
+
+    // → Logistics: payment released
+    const logisticsEmail = order.logisticsCompany?.contactEmail || order.logisticsCompany?.email;
+    if (logisticsEmail) {
+      fireEmail({
+        to:      logisticsEmail,
+        subject: `💰 Delivery fee released — Order #${shortId}`,
+        html:    buildSimpleEmail('Delivery Fee Released 💰', `Hi <strong>${order.logisticsCompany.name}</strong>, the retailer has confirmed delivery of order <strong>#${shortId}</strong>. Your delivery fee has been released to your account.`),
+      });
+    }
+
   } catch (err) {
     console.error('❌ Confirm error:', err);
     res.status(500).json({ msg: 'Server error' });
@@ -326,7 +376,9 @@ router.put('/:id/confirm', auth, auth.retailerOnly, async (req, res) => {
 // ── Cancel order (retailer) ───────────────────────────────────────────────────
 router.put('/:id/cancel', auth, auth.retailerOnly, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id)
+      .populate('wholesaler', 'name email businessName');
+
     if (!order) return res.status(404).json({ msg: 'Order not found' });
     if (order.retailer.toString() !== req.user.id) return res.status(403).json({ msg: 'Not your order' });
     if (order.status !== 'pending') return res.status(400).json({ msg: 'Only pending orders can be cancelled' });
@@ -339,6 +391,18 @@ router.put('/:id/cancel', auth, auth.retailerOnly, async (req, res) => {
     order.orderStatus = 'cancelled';
     await order.save();
     res.json(order);
+
+    // → Wholesaler: order cancelled
+    const shortId = order._id.toString().slice(-8).toUpperCase();
+    const wholesalerEmail = order.wholesaler?.email;
+    if (wholesalerEmail) {
+      fireEmail({
+        to:      wholesalerEmail,
+        subject: `❌ Order #${shortId} cancelled by retailer`,
+        html:    buildSimpleEmail('Order Cancelled ❌', `Order <strong>#${shortId}</strong> has been cancelled by the retailer before confirmation. No action is required.`),
+      });
+    }
+
   } catch (err) {
     res.status(500).json({ msg: 'Server error' });
   }
@@ -361,5 +425,31 @@ router.get('/:id', auth, auth.retailerOnly, async (req, res) => {
     res.status(500).json({ msg: 'Server error' });
   }
 });
+
+// ── Simple branded email builder (for short transactional messages) ───────────
+function buildSimpleEmail(title, bodyHtml) {
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px">
+        <tr><td style="background:linear-gradient(135deg,#1a3a6b,#0d6efd 50%,#00c853);border-radius:16px 16px 0 0;padding:28px 40px">
+          <table cellpadding="0" cellspacing="0"><tr>
+            <td style="background:#f0f0f0;border-radius:50px;padding:10px 22px">
+              <span style="font-size:22px;font-weight:900;color:#1a3a6b;font-family:Arial,sans-serif">order</span><span style="font-size:22px;font-weight:900;color:#00c853;font-family:Arial,sans-serif"> ·it</span>
+            </td>
+          </tr></table>
+        </td></tr>
+        <tr><td style="background:#fff;border-left:1px solid #e8e8e8;border-right:1px solid #e8e8e8;padding:40px">
+          <h2 style="margin:0 0 16px;color:#1a3a6b;font-size:22px">${title}</h2>
+          <p style="margin:0;color:#555;font-size:15px;line-height:1.7">${bodyHtml}</p>
+        </td></tr>
+        <tr><td style="background:#1a3a6b;border-radius:0 0 16px 16px;padding:20px 40px">
+          <p style="margin:0;color:rgba(255,255,255,0.6);font-size:12px">Order It — B2B E-Commerce Platform · Malawi<br/>This is an automated message. Please do not reply.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
 
 module.exports = router;
